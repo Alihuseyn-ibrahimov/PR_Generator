@@ -7,21 +7,26 @@ import google.generativeai as genai
 st.set_page_config(page_title="Nazirlik PR Generator", page_icon="📝", layout="wide")
 
 # ====================================================================
-# 1. AI MODELİNİN AYARLANMASI (SECRETS İLƏ GİZLİ)
+# 1. AI MODELİNİN AYARLANMASI (STREAMLIT CLOUD SECRETS İLƏ)
 # ====================================================================
+model = None
+api_status = False
+
 try:
+    # Buluddakı Secrets bölməsindən açarı çəkirik
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=GOOGLE_API_KEY)
-    # Ən stabil mətn modelini seçirik
     model = genai.GenerativeModel('gemini-pro')
-except Exception as e:
-    st.error("⚠️ API Key tapılmadı! Zəhmət olmasa .streamlit/secrets.toml faylını qurduğunuzdan əmin olun.")
+    api_status = True
+except Exception:
+    st.warning(
+        "⚠️ API Key tapılmadı! Zəhmət olmasa Streamlit Cloud-un 'Advanced Settings -> Secrets' bölməsində GOOGLE_API_KEY parametrini düzgün qeyd etdiyinizdən əmin olun.")
 
 
 # ====================================================================
 # 2. VEB SAYTDAN MƏLUMAT ÇƏKMƏ (RAG)
 # ====================================================================
-@st.cache_data(ttl=3600)  # Saytı hər saniyə yükləməmək üçün məlumatı 1 saatlıq yaddaşda saxlayır
+@st.cache_data(ttl=3600)
 def fetch_news_context():
     url = "https://sosial.gov.az/az/media/xeberler"
     try:
@@ -32,7 +37,7 @@ def fetch_news_context():
         news_items = []
         for p in soup.find_all(['h3', 'h4', 'p'], limit=30):
             text = p.get_text(strip=True)
-            if len(text) > 40:  # Çox qısa və mənasız sözləri filtrləyirik
+            if len(text) > 40:
                 news_items.append(text)
 
         return " ".join(news_items)
@@ -47,13 +52,16 @@ st.title("📝 Süni İntellektlə Press-Reliz Generatoru")
 st.markdown("Əmək və Əhalinin Sosial Müdafiəsi Nazirliyinin rəsmi üslubuna uyğun press-relizlərin avtomatik yazılması.")
 st.divider()
 
-# Yan panel (Sidebar) - API bölməsi silindi, yerinə məlumat ekləndi
+# Yan panel
 with st.sidebar:
     st.header("⚙️ Məlumat")
     st.info("Sistem avtomatik olaraq sosial.gov.az saytındakı xəbərləri analiz edərək yeni mətn yaradır.")
-    st.success("✅ Sistem Süni İntellektə uğurla qoşulub.")
+    if api_status:
+        st.success("✅ Sistem Süni İntellektə uğurla qoşulub (Bulud).")
+    else:
+        st.error("❌ Süni İntellektə qoşulma uğursuzdur.")
 
-# Əsas ekran - Məlumat daxil etmə
+# Əsas ekran
 col1, col2 = st.columns([2, 1])
 
 with col1:
@@ -69,15 +77,15 @@ with col2:
 # 4. GENERASİYA (MƏTNİN YARADILMASI)
 # ====================================================================
 if st.button("🚀 Press-Relizi Yarat", use_container_width=True):
-    if not movzu:
+    if not model:
+        st.error("Sistem Süni İntellektə qoşula bilməyib. Zəhmət olmasa Streamlit Cloud ayarlarını yoxlayın.")
+    elif not movzu:
         st.warning("Zəhmət olmasa, press-relizin mövzusunu daxil edin!")
     else:
         with st.spinner("Sosial.gov.az saytındakı son xəbərlər analiz edilir və yeni mətn yazılır..."):
             try:
-                # Üslubu çəkirik
                 uslub_metni = fetch_news_context()
 
-                # Süni İntellektə verilən əmr
                 prompt = f"""
                 Sən Azərbaycan Respublikası Əmək və Əhalinin Sosial Müdafiəsi Nazirliyinin peşəkar PR mütəxəssisisən. 
                 Aşağıdakı mətn nazirliyin rəsmi saytından götürülmüş əvvəlki xəbərlərdir. Bu mətnin rəsmi, aydın və bürokratik üslubunu diqqətlə öyrən:
@@ -89,7 +97,6 @@ if st.button("🚀 Press-Relizi Yarat", use_container_width=True):
                 Mövzu və detallar: {movzu}
                 """
 
-                # Nəticəni alırıq
                 response = model.generate_content(prompt)
 
                 st.success("Press-reliz uğurla yaradıldı!")
